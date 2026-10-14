@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>Caravanas · Painel</title>
+<style>
+:root{
+  color-scheme:dark;
+  --noite:#0a0705; --painel:#15100c; --areia:#d4a26a; --areia-2:#e3b982;
+  --texto:#f3eee8; --suave:rgba(243,238,232,.62); --linha:rgba(243,238,232,.18);
+  --erro:#ffb4a2;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--noite);color:var(--texto);font-family:'Poppins',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:15px}
+.wrap{max-width:1100px;margin:0 auto;padding:24px 16px 48px}
+h1{margin:0 0 4px;font-size:24px;font-weight:600;color:var(--areia-2)}
+.meta{margin:0 0 20px;color:var(--suave);font-size:13px}
+.card{background:var(--painel);border:1px solid var(--linha);border-radius:14px;padding:18px}
+button{font:inherit;cursor:pointer;border:1px solid var(--areia);background:transparent;color:var(--areia-2);border-radius:10px;padding:10px 14px}
+button.principal{background:var(--areia);color:#1a0f07;font-weight:600}
+button:hover{filter:brightness(1.1)}
+.evento{display:flex;gap:8px;margin:0 0 16px}.evento button{flex:1;padding:12px 14px}.evento button.on{background:var(--areia);color:#1a0f07;font-weight:600}
+input,select{font:inherit;background:#0f0b08;color:var(--texto);border:1px solid var(--linha);border-radius:10px;padding:10px 12px;min-width:0}
+.barra,.ferr{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
+.barra{justify-content:space-between;color:var(--suave);font-size:13px}
+.ferr input{flex:1 1 200px}
+.msg{color:var(--erro);margin:10px 0 0;min-height:1em}
+.total{color:var(--suave);margin:0 0 10px;font-size:13px}
+.tabela{overflow-x:auto;border:1px solid var(--linha);border-radius:12px}
+table{width:100%;border-collapse:collapse;min-width:1000px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--linha);vertical-align:top}
+th{position:sticky;top:0;background:#1d1510;color:var(--areia-2);font-weight:600;font-size:13px}
+tr:last-child td{border-bottom:0}
+td a{color:var(--areia-2)}
+.zap{display:inline-block;margin-left:8px;font-size:12px;border:1px solid var(--areia);border-radius:999px;padding:2px 9px;text-decoration:none}
+.vazio{padding:24px;text-align:center;color:var(--suave)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Caravanas inscritas</h1>
+  <p class="meta" id="meta"></p>
+
+  <section class="card" id="login">
+    <p style="margin-top:0">Entre com a conta Google que está liberada no gestor.</p>
+    <button class="principal" id="btnLogin">Entrar com Google</button>
+    <p class="msg" id="msgLogin"></p>
+  </section>
+
+  <section id="painel" hidden>
+    <div class="barra">
+      <span id="quem"></span>
+      <button id="btnSair">Sair</button>
+    </div>
+    <div class="evento" role="tablist" aria-label="Evento">
+      <button id="evHomens" role="tab">Conferência de Homens</button>
+      <button id="evMulheres" role="tab">Conferência de Mulheres</button>
+    </div>
+    <div class="ferr">
+      <input id="busca" type="search" placeholder="Buscar por igreja, líder, cidade, pastor…" aria-label="Buscar">
+      <select id="ordem" aria-label="Ordenar por"></select>
+      <button id="btnAtualizar">Atualizar</button>
+      <button class="principal" id="btnXlsx">Baixar Excel</button>
+    </div>
+    <p class="total" id="total"></p>
+    <div class="tabela">
+      <table>
+        <thead><tr id="cab"></tr></thead>
+        <tbody id="corpo"></tbody>
+      </table>
+      <div class="vazio" id="vazio" hidden>Nenhuma caravana encontrada.</div>
+    </div>
+    <p class="msg" id="msgPainel"></p>
+  </section>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyC6_DDTRZmiQdDbn6ClOxel7bZCxYmlAI8",
+  authDomain: "equipe-de-trabalho-ae029.firebaseapp.com",
+  projectId: "equipe-de-trabalho-ae029",
+  storageBucket: "equipe-de-trabalho-ae029.firebasestorage.app",
+  messagingSenderId: "832841108199",
+  appId: "1:832841108199:web:df1c65102b94e0105f7042"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+// k = campo, t: 'zap' (com botão WhatsApp), 'cid' (cidade/UF), 'data'
+const EVENTOS = {
+  homens: {
+    nome: 'Conferência de Homens', meta: '15 a 17 de out · Verbo Estação · Campina Grande',
+    col: 'caravanas', arq: 'caravanas-homens.xlsx',
+    cols: [
+      {h:'Igreja', k:'igreja'}, {h:'Cidade/UF', t:'cid'}, {h:'Líder', k:'lider'},
+      {h:'Telefone', k:'telefone', t:'zap'}, {h:'Pastor', k:'pastor'},
+      {h:'Celular do pastor', k:'celularPastor', t:'zap'}, {h:'Inscrita em', k:'criadoEm', t:'data'}
+    ],
+    ordem: [['igreja','Igreja'],['lider','Líder'],['cidade','Cidade'],['pastor','Pastor']],
+    ordemPadrao: 'igreja',
+    xlsx: [['Igreja','igreja',30],['Cidade','cidade',22],['UF','estado',5],['Líder','lider',28],['Telefone','telefone',18],
+           ['Pastor','pastor',28],['Celular do pastor','celularPastor',18],['Inscrita em','criadoEm',14]]
+  },
+  mulheres: {
+    nome: 'Conferência de Mulheres', meta: 'Conferência de Mulheres',
+    col: 'caravanas_mulheres', arq: 'caravanas-mulheres.xlsx',
+    cols: [
+      {h:'Cidade/UF', t:'cid'}, {h:'Líder', k:'lider'}, {h:'Celular', k:'telefone', t:'zap'},
+      {h:'Pastor', k:'pastor'}, {h:'Esposa do pastor', k:'esposaPastor'},
+      {h:'Celular dela', k:'celularEsposa', t:'zap'}, {h:'Observações', k:'observacao'}, {h:'Inscrita em', k:'criadoEm', t:'data'}
+    ],
+    ordem: [['cidade','Cidade'],['lider','Líder'],['pastor','Pastor']],
+    ordemPadrao: 'cidade',
+    xlsx: [['Cidade','cidade',22],['UF','estado',5],['Líder','lider',28],['Celular da líder','telefone',18],['Pastor','pastor',28],
+           ['Esposa do pastor','esposaPastor',28],['Celular da esposa','celularEsposa',18],['Observações','observacao',40],['Inscrita em','criadoEm',14]]
+  }
+};
+let evento = 'homens';
+let lista = [];
+let seq = 0;
+
+const $ = id => document.getElementById(id);
+const ev = () => EVENTOS[evento];
+const az = (a, b) => (a || '').toString().localeCompare((b || '').toString(), 'pt-BR', {sensitivity:'base'});
+const norm = s => (s || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const digits = v => (v || '').replace(/\D/g, '');
+const fmtData = ts => ts && ts.toDate ? ts.toDate().toLocaleString('pt-BR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : '';
+
+function zapLink(tel){
+  let d = digits(tel);
+  if(d.length < 10) return '';
+  if(!(d.length >= 12 && d.startsWith('55'))) d = '55' + d;
+  return 'https://wa.me/' + d;
+}
+
+function visiveis(){
+  const q = norm($('busca').value.trim());
+  const campo = $('ordem').value;
+  const padrao = ev().ordemPadrao;
+  return lista
+    .filter(c => !q || norm(Object.values(c).filter(v => typeof v === 'string').join(' ')).includes(q))
+    .sort((a, b) => az(a[campo], b[campo]) || az(a[padrao], b[padrao]) || az(a.lider, b.lider));
+}
+
+function celula(tr, texto){
+  const td = document.createElement('td');
+  td.textContent = texto || '';
+  tr.appendChild(td);
+  return td;
+}
+
+function addZap(td, tel){
+  const link = zapLink(tel);
+  if(!link) return;
+  const a = document.createElement('a');
+  a.className = 'zap'; a.href = link; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'WhatsApp';
+  td.appendChild(a);
+}
+
+function montarCabecalho(){
+  const cab = $('cab');
+  cab.textContent = '';
+  ev().cols.forEach(c => { const th = document.createElement('th'); th.textContent = c.h; cab.appendChild(th); });
+  const sel = $('ordem');
+  sel.textContent = '';
+  ev().ordem.forEach(([v, r]) => { const o = document.createElement('option'); o.value = v; o.textContent = 'Ordem A–Z: ' + r; sel.appendChild(o); });
+  sel.value = ev().ordemPadrao;
+  $('meta').textContent = ev().meta;
+  $('evHomens').classList.toggle('on', evento === 'homens');
+  $('evMulheres').classList.toggle('on', evento === 'mulheres');
+  $('evHomens').setAttribute('aria-selected', evento === 'homens');
+  $('evMulheres').setAttribute('aria-selected', evento === 'mulheres');
+}
+
+function desenhar(){
+  const itens = visiveis();
+  const corpo = $('corpo');
+  corpo.textContent = '';
+  itens.forEach(c => {
+    const tr = document.createElement('tr');
+    ev().cols.forEach(col => {
+      if(col.t === 'cid') celula(tr, (c.cidade || '') + (c.estado ? '/' + c.estado : ''));
+      else if(col.t === 'data') celula(tr, fmtData(c[col.k]));
+      else if(col.t === 'zap') addZap(celula(tr, c[col.k]), c[col.k]);
+      else celula(tr, c[col.k]);
+    });
+    corpo.appendChild(tr);
+  });
+  $('vazio').hidden = itens.length > 0;
+  $('total').textContent = itens.length === lista.length
+    ? lista.length + ' caravana(s) inscrita(s)'
+    : itens.length + ' de ' + lista.length + ' caravana(s)';
+}
+
+async function carregar(){
+  const minha = ++seq;
+  $('msgPainel').textContent = '';
+  try{
+    const snap = await db.collection(ev().col).get();
+    if(minha !== seq) return;
+    lista = snap.docs.map(d => d.data());
+    desenhar();
+  }catch(e){
+    if(minha !== seq) return;
+    console.error(e);
+    lista = [];
+    desenhar();
+    $('msgPainel').textContent = e.code === 'permission-denied'
+      ? 'Esta conta não tem permissão para ver as caravanas. Entre com a conta liberada no gestor.'
+      : 'Não consegui carregar agora. Verifique a internet e toque em Atualizar.';
+  }
+}
+
+function trocar(novo){
+  if(novo === evento) return;
+  evento = novo;
+  lista = [];
+  $('busca').value = '';
+  montarCabecalho();
+  desenhar();
+  carregar();
+}
+
+function baixarExcel(){
+  const itens = visiveis();
+  if(!itens.length){ $('msgPainel').textContent = 'Não há caravanas para baixar.'; return; }
+  const campos = ev().xlsx;
+  const linhas = itens.map(c => {
+    const l = {};
+    campos.forEach(([h, k]) => { l[h] = k === 'criadoEm' ? fmtData(c[k]) : (c[k] || ''); });
+    return l;
+  });
+  const ws = XLSX.utils.json_to_sheet(linhas);
+  ws['!cols'] = campos.map(f => ({wch: f[2]}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Caravanas');
+  XLSX.writeFile(wb, ev().arq);
+}
+
+$('btnLogin').onclick = async () => {
+  $('msgLogin').textContent = '';
+  const provider = new firebase.auth.GoogleAuthProvider();
+  try{
+    await auth.signInWithPopup(provider);
+  }catch(e){
+    console.error(e);
+    if(e.code === 'auth/popup-blocked' || e.code === 'auth/operation-not-supported-in-this-environment'){
+      auth.signInWithRedirect(provider);
+    }else if(e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request'){
+      $('msgLogin').textContent = 'Não consegui entrar (' + (e.code || 'erro') + ').';
+    }
+  }
+};
+$('btnSair').onclick = () => auth.signOut();
+$('btnAtualizar').onclick = carregar;
+$('btnXlsx').onclick = baixarExcel;
+$('busca').oninput = desenhar;
+$('ordem').onchange = desenhar;
+$('evHomens').onclick = () => trocar('homens');
+$('evMulheres').onclick = () => trocar('mulheres');
+
+montarCabecalho();
+auth.onAuthStateChanged(user => {
+  $('login').hidden = !!user;
+  $('painel').hidden = !user;
+  if(user){
+    $('quem').textContent = 'Conectado como ' + (user.email || '');
+    carregar();
+  }else{
+    lista = [];
+    $('corpo').textContent = '';
+  }
+});
+</script>
+</body>
+</html>
